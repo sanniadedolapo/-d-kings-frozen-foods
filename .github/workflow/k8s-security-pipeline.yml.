@@ -1,4 +1,4 @@
-name: Kubernetes Security Deployment Pipeline
+ Kubernetes Security Deployment Pipeline
 
 # Trigger this workflow every time someone pushes code to the main branch
 on:
