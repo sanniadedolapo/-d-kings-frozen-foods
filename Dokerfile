@@ -1,0 +1,8 @@
+FROM maven:3.9.6-eclipse-termurin-21 AS build
+COPY . .
+RUN mvn clean package -DskipTests
+
+FROM eclipes-temrin:21-jdk
+COPY --from-build /target/*. jar app. Jar
+EXPOSE 8080
+ENTRYPOINT I"java","-jar","/app. jar"I
