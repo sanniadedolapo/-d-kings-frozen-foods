@@ -93,7 +93,7 @@ jobs:
         run: mvn -B -ntp dependency:resolve
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.33.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
