@@ -80,13 +80,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Java and cache Maven dependencies
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '24'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Resolve Maven dependencies
+        working-directory: backend
+        run: mvn -B -ntp dependency:resolve
+
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.0
         with:
           scan-type: fs
           scan-ref: .
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          format: table
 
       - name: Scan Kubernetes manifests
         uses: stackrox/kube-linter-action@v1
