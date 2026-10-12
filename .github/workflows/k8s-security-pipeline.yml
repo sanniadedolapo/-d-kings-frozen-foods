@@ -1,0 +1,127 @@
+name: D Kings Frozen Foods - Kubernetes CI/CD
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-and-test:
+    name: Build, Deploy and Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Start Minikube
+        uses: medyagh/setup-minikube@master
+
+      - name: Verify Kubernetes Cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+          minikube status
+
+      - name: Build Backend Docker Image
+        run: docker build -t dkings-backend:ci ./backend
+
+      - name: Build Frontend Docker Image
+        run: docker build -t dkings-frontend:ci ./frontend
+
+      - name: Load Application Images into Minikube
+        run: |
+          minikube image load dkings-backend:ci
+          minikube image load dkings-frontend:ci
+
+      - name: Apply Existing Security RBAC
+        run: kubectl apply -f k8s/security-rules.yaml
+
+      - name: Create Temporary CI Database Secret
+        run: |
+          kubectl create secret generic dkings-db-secret \
+            --from-literal=password=ci_dkings_password \
+            --from-literal=root-password=ci_root_password \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Application Configuration
+        run: kubectl apply -f k8s/app-config.yaml
+
+      - name: Deploy MySQL
+        run: |
+          kubectl apply -f k8s/app-mysql.yaml
+          kubectl rollout status deployment/dkings-mysql --timeout=300s
+          kubectl get pods -o wide
+
+      - name: Deploy Backend and Frontend
+        run: |
+          kubectl apply -f k8s/app-workloads.yaml
+          kubectl rollout status deployment/dkings-backend --timeout=300s
+          kubectl rollout status deployment/dkings-frontend --timeout=180s
+          kubectl get deployments
+          kubectl get services
+          kubectl get pods -o wide
+
+      - name: Verify Backend Database Connection
+        run: |
+          set -e
+          kubectl port-forward service/backend 18080:8080 \
+            >/tmp/backend-port-forward.log 2>&1 &
+          echo $! >/tmp/backend-port-forward.pid
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18080/api/health \
+              -o /tmp/backend-health.json; then
+              break
+            fi
+            sleep 3
+          done
+
+          cat /tmp/backend-health.json
+          grep -q '"database"[[:space:]]*:[[:space:]]*"CONNECTED"' \
+            /tmp/backend-health.json
+
+      - name: Verify Storefront and Products API
+        run: |
+          set -e
+          kubectl port-forward service/frontend 18081:80 \
+            >/tmp/frontend-port-forward.log 2>&1 &
+          echo $! >/tmp/frontend-port-forward.pid
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18081/ \
+              -o /tmp/storefront.html; then
+              break
+            fi
+            sleep 3
+          done
+
+          test -s /tmp/storefront.html
+          echo "Storefront returned a page successfully."
+
+          curl --retry 5 --retry-delay 3 --retry-connrefused \
+            -fsS http://127.0.0.1:18081/api/products \
+            -o /tmp/products.json
+
+          test -s /tmp/products.json
+          echo "Products API responded successfully."
+          head -c 500 /tmp/products.json
+          echo
+
+      - name: Deploy Secure Demonstration Pod
+        run: |
+          kubectl apply -f k8s/secure-pod.yaml
+          kubectl wait --for=condition=Ready \
+            pod/secure-app-pod --timeout=180s
+          kubectl get pod secure-app-pod -o wide
+          kubectl describe pod secure-app-pod
+
+      - name: Show Final Deployment Status
+        if: always()
+        run: |
+          kubectl get deployments,services,pods -o wide || true

@@ -7,3 +7,12 @@ backend/target/
 *.log
 .idea/
 .vscode/
+
+# Local database backups
+backups/
+
+# Local backup and temporary files
+*.bak
+
+# Local backup and temporary files
+*.bak

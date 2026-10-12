@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dkings-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dkings-backend
+  template:
+    metadata:
+      labels:
+        app: dkings-backend
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z mysql 3306; do echo "Waiting for MySQL"; sleep 2; done
+      containers:
+        - name: backend
+          image: dkings-backend:ci
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: dkings-app-config
+          env:
+            - name: DB_USERNAME
+              value: dkings
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dkings-db-secret
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: dkings-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dkings-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dkings-frontend
+  template:
+    metadata:
+      labels:
+        app: dkings-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: dkings-frontend:ci
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: dkings-frontend
+  ports:
+    - port: 80
+      targetPort: 80
